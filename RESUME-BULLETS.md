@@ -8,6 +8,8 @@
 - Added a batch-conversion endpoint that fans out FX lookups with `CompletableFuture` on a virtual-thread-per-task executor, with a latch-based unit test that deadlocks unless all 20 conversions really run concurrently.
 - Instrumented the service with Micrometer/Prometheus (custom counters and an `fx_call` latency histogram), ECS JSON structured logs, and multi-window SLO burn-rate alerts (99.5% availability, 14.4x/6x burn) — 3 alerts and 4 recording rules loaded in Prometheus; load-tested with JMeter (20 users × 10 loops: 200 requests, 0 HTTP errors, ~18 req/s, p95 1074 ms) and documented the missed 1 s latency target and its sequential-write root cause.
 - Built a React + TypeScript (Vite) front end with a custom `useReceipts` hook covered by 4 Vitest/Testing Library tests, and a Selenium Page Object UI test that creates a receipt in Chromium running in Testcontainers; wrote a GitHub Actions workflow for backend, frontend, Terraform validate and promtool checks.
+- Added a standalone Angular 19 component that looks up a receipt by id against the same Spring Boot REST API (`frontend-angular/`; Vitest on the HTTP client). Lab-level Angular only — not a routed enterprise app.
+- Exposed the same receipt lookup as GraphQL (`receipt(id)` on `/graphql`, money as strings) and as a protobuf `GetReceipt` gRPC service; both are adapters over `ReceiptService`, covered by slice/unit tests. A tiny Angular standalone component calls the REST GET for Citi/Broadridge-style UI titles (not a full Angular app).
 
 ## Interview talking points (from the 10 fixes in RUN-RESULTS.md)
 

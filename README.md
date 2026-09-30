@@ -14,9 +14,13 @@ Branch `miscellaneous` of banking-backend is an **orphan branch**: no shared his
 | Concurrency | `POST /api/receipts/batch` | Parallel FX conversion with `CompletableFuture` on virtual threads |
 | Observability / SRE | `observability/`, Micrometer in backend | Prometheus metrics (counter, histogram), JSON logs, 99.5% SLO multi-window burn-rate alerts |
 | React + TypeScript | `frontend/` | Form + list, custom hook, Vitest + Testing Library |
+| Angular (standalone) | `frontend-angular/` | Tiny receipt-id lookup against the same REST API; Vitest on `ReceiptApi` |
 | Selenium | `e2e/` | Page Object + Chromium in Testcontainers |
 | JMeter | `perf/` | 20-user load test with assertions and HTML report |
 | Testcontainers, CI | `backend/…/*IT.java`, `.github/workflows/ci.yml` | LocalStack + Mongo integration tests; CI for all parts |
+| GraphQL | `backend/…/ReceiptGraphqlController.java`, `graphql/schema.graphqls` | `receipt(id)` query over the same service as REST |
+| gRPC / protobuf | `backend/src/main/proto/receipts.proto`, `ReceiptGrpcService` | `GetReceipt` RPC; unit tests, no extra port in `mvnw test` |
+| Angular (tiny) | `frontend-angular/` | Standalone component + `ReceiptApi` GET lookup; Vitest on the API |
 
 Proof it runs: **[RUN-RESULTS.md](RUN-RESULTS.md)** — every step, its command, pass/fail and numbers, plus the 10 real problems hit and fixed.
 
