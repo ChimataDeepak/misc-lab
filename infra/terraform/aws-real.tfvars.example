@@ -1,0 +1,9 @@
+# Real AWS free tier. Copy to aws-real.tfvars (gitignored) and run YOURSELF:
+#   export AWS_PROFILE=<your-own-profile>   # never commit credentials
+#   ./infra/tf.sh plan  -var-file=aws-real.tfvars   (tf.sh forwards AWS_* env; mount ~/.aws if using profiles)
+#   ./infra/tf.sh apply -var-file=aws-real.tfvars
+#   ./infra/tf.sh destroy -var-file=aws-real.tfvars  # tear down to stay in free tier
+# Free-tier notes: S3 5GB, SQS 1M req/mo, DynamoDB 25GB on-demand is cheap, Lambda 1M req/mo.
+use_localstack = false
+region         = "ap-south-1"
+bucket_name    = "misc-receipts-CHANGE-ME-globally-unique"

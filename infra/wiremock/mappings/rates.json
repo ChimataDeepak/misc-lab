@@ -1,0 +1,6 @@
+{
+  "request": { "method": "GET", "urlPath": "/rates",
+               "queryParameters": { "from": { "matches": ".+" }, "to": { "equalTo": "USD" } } },
+  "response": { "status": 200, "headers": { "Content-Type": "application/json" },
+                "jsonBody": { "rate": 0.012 } }
+}

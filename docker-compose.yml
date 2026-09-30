@@ -1,0 +1,32 @@
+# misc-lab local stack: one `docker compose up -d` gives the app everything it talks to.
+services:
+  localstack:
+    image: localstack/localstack:3.8
+    ports: ["4566:4566"]
+    environment:
+      SERVICES: s3,sqs,dynamodb,lambda,iam,logs
+      AWS_DEFAULT_REGION: ap-south-1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock   # lets LocalStack run Lambda containers
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+  wiremock:                                          # fake FX provider
+    image: wiremock/wiremock:3.9.1
+    ports: ["8099:8080"]
+    volumes:
+      - ./infra/wiremock:/home/wiremock
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    ports: ["9090:9090"]
+    # Docker Desktop / Rancher Desktop resolve host.docker.internal to the Mac; on Linux add extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alert-rules.yml:/etc/prometheus/alert-rules.yml:ro
+  grafana:
+    image: grafana/grafana:11.2.0
+    ports: ["3000:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    profiles: ["grafana"]                            # opt-in: docker compose --profile grafana up

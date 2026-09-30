@@ -1,0 +1,53 @@
+server:
+  port: 8090
+spring:
+  application:
+    name: misc-lab
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/misclab
+logging:
+  structured:
+    format:
+      console: ecs          # JSON structured logs (Spring Boot 3.4+ built-in)
+misclab:
+  aws:
+    endpoint: http://localhost:4566
+    region: ap-south-1
+    access-key: test
+    secret-key: test
+    bucket: misc-receipts
+    queue: receipt-events
+    table: receipts
+    init-resources: true    # create bucket/queue/table on startup (LocalStack convenience)
+  poller:
+    enabled: true
+fx:
+  base-url: http://localhost:8099
+  connect-timeout: 500ms
+  read-timeout: 1s
+  fallback-rate: 0.0119
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics,circuitbreakers
+  health:
+    circuitbreakers:
+      enabled: true
+resilience4j:
+  retry:
+    instances:
+      fx:
+        max-attempts: 2
+        wait-duration: 100ms
+        ignore-exceptions:
+          - io.github.resilience4j.circuitbreaker.CallNotPermittedException
+  circuitbreaker:
+    instances:
+      fx:
+        sliding-window-size: 4
+        minimum-number-of-calls: 4
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        register-health-indicator: true

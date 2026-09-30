@@ -1,0 +1,12 @@
+target/
+node_modules/
+dist/
+perf/report/
+perf/results.jtl
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+*.tfvars
+!*.tfvars.example
+.DS_Store
