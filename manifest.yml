@@ -1,0 +1,12 @@
+---
+applications:
+- name: misc-lab
+  memory: 1G
+  instances: 1
+  path: backend/target/misc-lab-backend-0.0.1-SNAPSHOT.jar
+  buildpacks:
+  - java_buildpack
+  env:
+    JBP_CONFIG_OPEN_JDK_JRE: '{ jre: { version: 21.+ } }'
+  health-check-type: http
+  health-check-http-endpoint: /actuator/health

@@ -22,6 +22,11 @@ Branch `miscellaneous` of banking-backend is an **orphan branch**: no shared his
 | gRPC / protobuf | `backend/src/main/proto/receipts.proto`, `ReceiptGrpcService` | `GetReceipt` RPC; unit tests, no extra port in `mvnw test` |
 | Angular (tiny) | `frontend-angular/` | Standalone component + `ReceiptApi` GET lookup; Vitest on the API |
 | Azure Blob (Azurite) | `AzureBlobReceiptArchive.java` | Receipt JSON to Azure Blob via official SDK; emulator, not a real subscription |
+| Elasticsearch | `ElasticsearchReceiptClient.java` | Index + payer search over ES HTTP; WireMock stand-in (optional Testcontainers URL) |
+| Spark (local) | `spark/ReceiptPayerCount.java` | `local[1]` payer word-count on receipt lines; not Databricks/Hadoop |
+| OAuth2/OIDC resource server | `OidcResourceServerConfig`, `/api/oidc/me` | JWT issuer+audience on one path; HMAC lab IdP, not Okta auth-code |
+| LLM HTTP stub | `LlmClient.java` | OpenAI-compatible `/v1/chat/completions` against WireMock; no real key |
+| PCF / Cloud Foundry | `manifest.yml` | Deploy descriptor only; no live PCF space |
 
 Proof it runs: **[RUN-RESULTS.md](RUN-RESULTS.md)** — every step, its command, pass/fail and numbers, plus the 10 real problems hit and fixed.
 
