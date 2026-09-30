@@ -23,6 +23,14 @@ public class ReceiptController {
     @GetMapping
     public List<Receipt> list(@RequestParam(defaultValue = "100") int limit) { return service.list(Math.max(1, Math.min(limit, 500))); }
 
+    /** A storage write failed: 503 so clients know to retry (a retry creates a new receipt; see README). */
+    @ExceptionHandler(ReceiptService.ReceiptWriteException.class)
+    org.springframework.http.ProblemDetail writeFailed(ReceiptService.ReceiptWriteException e) {
+        var pd = org.springframework.http.ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE, e.getMessage());
+        pd.setProperty("failedStores", e.failedStores());
+        return pd;
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<Receipt> get(@PathVariable String id) {
         Receipt r = service.get(id);

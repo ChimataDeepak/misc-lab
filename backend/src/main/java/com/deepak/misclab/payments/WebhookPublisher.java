@@ -5,33 +5,40 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.client.RestClient;
 
 /**
- * Sends a signed JSON event for each payment state change. Every event is kept in an in-memory outbox (so tests and
- * a GET endpoint can show what was sent); if a target URL is configured it is also POSTed there.
+ * Signed JSON event per payment state change, written to the {@code webhook_outbox} table in the <b>same transaction</b>
+ * as the state change (so an event exists if and only if the change committed). If a target URL is configured, the
+ * POST happens <b>after commit</b>: a rolled-back transition never notifies the merchant.
  * A delivery failure is logged, never thrown: the payment already happened, the webhook is a notification.
- * (Production next step: persist the outbox in the same DB transaction and retry with backoff.)
+ * (Production next step: a relay that retries undelivered outbox rows with backoff; here delivery is best-effort once.)
  */
 public class WebhookPublisher {
     private static final Logger log = LoggerFactory.getLogger(WebhookPublisher.class);
 
     public record Event(String id, String type, PaymentIntent data) {}
-    public record Sent(Event event, String body, String signatureHeader) {}
+    public record Sent(String eventId, String type, String paymentId, String body, String signatureHeader) {}
+
+    private static final RowMapper<Sent> ROW = (rs, i) -> new Sent(rs.getString("event_id"), rs.getString("type"),
+            rs.getString("payment_id"), rs.getString("body"), rs.getString("signature"));
 
     private final String secret;
     private final String targetUrl;
     private final Clock clock;
     private final ObjectMapper json;
+    private final JdbcTemplate jdbc;
     private final RestClient http = RestClient.create();
-    private final List<Sent> outbox = new CopyOnWriteArrayList<>();
 
-    public WebhookPublisher(String secret, String targetUrl, Clock clock, ObjectMapper json) {
-        this.secret = secret; this.targetUrl = targetUrl; this.clock = clock; this.json = json;
+    public WebhookPublisher(String secret, String targetUrl, Clock clock, ObjectMapper json, JdbcTemplate jdbc) {
+        this.secret = secret; this.targetUrl = targetUrl; this.clock = clock; this.json = json; this.jdbc = jdbc;
     }
 
     public Sent publish(String type, PaymentIntent pi) {
@@ -39,19 +46,34 @@ public class WebhookPublisher {
         String body;
         try { body = json.writeValueAsString(event); } catch (JsonProcessingException e) { throw new IllegalStateException(e); }
         String header = WebhookSigner.header(secret, clock.instant().getEpochSecond(), body);
-        Sent sent = new Sent(event, body, header);
-        outbox.add(sent);
+        Sent sent = new Sent(event.id(), type, pi.id(), body, header);
+        jdbc.update("INSERT INTO webhook_outbox (event_id, type, payment_id, body, signature) VALUES (?, ?, ?, ?, ?)",
+                sent.eventId(), type, pi.id(), body, header);
         if (targetUrl != null && !targetUrl.isBlank()) {
-            try {
-                http.post().uri(targetUrl).contentType(MediaType.APPLICATION_JSON)
-                        .header(WebhookSigner.HEADER, header).header("Misclab-Event-Id", event.id())
-                        .body(body).retrieve().toBodilessEntity();
-            } catch (RuntimeException e) {
-                log.warn("webhook delivery failed event={} type={}: {}", event.id(), type, e.getMessage());
+            if (TransactionSynchronizationManager.isSynchronizationActive()) {
+                TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                    @Override public void afterCommit() { deliver(sent); }
+                });
+            } else {
+                deliver(sent);
             }
         }
         return sent;
     }
 
-    public List<Sent> outbox() { return List.copyOf(outbox); }
+    private void deliver(Sent sent) {
+        try {
+            http.post().uri(targetUrl).contentType(MediaType.APPLICATION_JSON)
+                    .header(WebhookSigner.HEADER, sent.signatureHeader()).header("Misclab-Event-Id", sent.eventId())
+                    .body(sent.body()).retrieve().toBodilessEntity();
+        } catch (RuntimeException e) {
+            log.warn("webhook delivery failed event={} type={}: {}", sent.eventId(), sent.type(), e.getMessage());
+        }
+    }
+
+    public List<Sent> outbox() { return jdbc.query("SELECT * FROM webhook_outbox ORDER BY seq", ROW); }
+
+    public List<Sent> outboxFor(String paymentId) {
+        return jdbc.query("SELECT * FROM webhook_outbox WHERE payment_id = ? ORDER BY seq", ROW, paymentId);
+    }
 }

@@ -8,6 +8,13 @@ services:
       AWS_DEFAULT_REGION: ap-south-1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock   # lets LocalStack run Lambda containers
+  postgres:                                          # payments: intents, idempotency keys, webhook outbox/inbox
+    image: postgres:16
+    ports: ["5433:5432"]                             # 5433 on the host: 5432 is often taken by a local Postgres
+    environment:
+      POSTGRES_DB: misclab
+      POSTGRES_USER: misclab
+      POSTGRES_PASSWORD: misclab
   mongo:
     image: mongo:7
     ports: ["27017:27017"]

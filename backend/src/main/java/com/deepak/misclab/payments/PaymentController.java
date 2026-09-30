@@ -48,7 +48,7 @@ public class PaymentController {
     @GetMapping("/webhooks/outbox")
     public List<Map<String, String>> outbox() {
         return webhooks.outbox().stream()
-                .map(s -> Map.of("id", s.event().id(), "type", s.event().type(), "signature", s.signatureHeader())).toList();
+                .map(s -> Map.of("id", s.eventId(), "type", s.type(), "paymentId", s.paymentId(), "signature", s.signatureHeader())).toList();
     }
 
     /** Receiver endpoint: shows the verify side (signature, timestamp window, replay). */
@@ -70,6 +70,11 @@ public class PaymentController {
 
     @ExceptionHandler(WebhookVerifier.Rejected.class)
     ProblemDetail rejected(RuntimeException e) { return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, e.getMessage()); }
+
+    @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
+    ProblemDetail stale(RuntimeException e) {
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "payment was modified concurrently, retry");
+    }
 
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail bad(RuntimeException e) { return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, e.getMessage()); }

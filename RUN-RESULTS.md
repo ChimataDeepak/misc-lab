@@ -82,7 +82,48 @@ Same machine (Rancher Desktop, macOS arm64, Corretto 21). Env as in "How to re-r
 14. **New read endpoint**: `GET /api/receipts?limit=` (DynamoDB scan, capped at 500) added for the Python service; asserted in `ReceiptFlowIT`.
 
 ## Still open / honest limits
-- Payments state, idempotency keys and the webhook outbox are in memory. Next step: DB-backed idempotency table + transactional outbox + retry with backoff.
+- ~~Payments state, idempotency keys and the webhook outbox are in memory.~~ Done in round 3 (Postgres). Still open: outbox relay with retry/backoff.
 - GCP ran against emulators only. The real-GCP path (ADC credentials) is written but not run.
 - Go ran in Docker, not a local toolchain.
-- p95 latency finding from round 1 is unchanged (not re-measured).
+- p95 latency finding from round 1: re-measured in round 3 (the sequential-writes diagnosis turned out to be wrong).
+
+---
+
+# 30 Sep 2026, round 3: payments on PostgreSQL + parallel receipt writes
+
+Same machine (Rancher Desktop, macOS arm64, 11 cores, Corretto 21). Note: the Rancher VM was also running an unrelated k8s stack (OpenSearch, Kafka, two app pods in a restart loop) the whole time, which made the load numbers below noisy.
+
+| # | Step | Command | Result |
+|---|---|---|---|
+| 23 | Backend, full | `cd backend && ./mvnw verify` | PASS: **50 unit** (surefire, was 43) + **4 IT** (failsafe), 2 min 07 s. Payments tests now run against a real Postgres 16 (Testcontainers `jdbc:tc:` URL). See fix 15 for a first run that failed |
+| 24 | Payments on Postgres | `PaymentServiceTest` (10, was 6), `PaymentApiIntegrationTest` (1) | PASS: 50 concurrent same-key creates → 1 row in `payment_intents` + 1 outbox event; 20 concurrent refunds of 100 on a 1000 capture → exactly 10 succeed, refunded = 1000, status REFUNDED; failed capture (409) leaves no idempotency row and the key works after authorize; an event id accepted by one verifier is rejected by a second instance (replay check in the DB); full MVC lifecycle + merchant webhooks as before |
+| 25 | Parallel receipt writes | `ReceiptServiceTest` (5, was 2) | PASS: latch test proves DynamoDB/S3/Mongo writes run concurrently; SQS send happens after them; an S3 failure → `ReceiptWriteException` naming `s3`, no SQS event, counter not incremented; two failures are both reported |
+| 26 | Live restart check | jar + `docker compose up -d` (now incl. `postgres:16` on 5433), create + authorize a payment, restart the JVM | PASS: `GET` after restart returns AUTHORIZED; same Idempotency-Key after restart returns the same payment id; outbox still has its 2 events |
+| 27 | Load test before/after | `./perf/run.sh` (20 users × 10 loops), old jar and new jar alternated, 5 runs each, after `terraform apply` on LocalStack and 10 warm-up requests | see below: **no reliable improvement** |
+| 28 | Single-client latency | 100 sequential `curl` POSTs per jar, 2 rounds | before mean 35 / 35 ms, after 31 / 34 ms. p95 48-49 ms before, 56-57 ms after |
+
+### Load test, per run (p95 / throughput / mean, 200 requests each, 0 HTTP errors in every run)
+
+| Run | Before (sequential writes) | After (parallel writes) |
+|---|---|---|
+| 1 | 837 ms / 24.8 req/s / 530 ms | 572 ms / 27.8 req/s / 422 ms |
+| 2 | 989 ms / 26.3 req/s / 517 ms | 670 ms / 25.2 req/s / 411 ms |
+| 3 | 815 ms / 27.5 req/s / 477 ms | 20094 ms / 7.5 req/s / 2318 ms (all 20 users stalled ~20 s at once, no server errors) |
+| 4 | 921 ms / 22.9 req/s / 545 ms | 1392 ms / 20.6 req/s / 715 ms |
+| 5 | 3041 ms / 16.9 req/s / 1052 ms | 1015 ms / 7.3 req/s / 1432 ms |
+| **Median** | **p95 921 ms, 24.8 req/s** | **p95 1015 ms, 20.6 req/s** |
+
+Round-1 reference: p95 1074 ms, ~18 req/s.
+
+**Honest reading:** the change did not produce a measurable load-test win on this machine. The first two pairs favour the new code (p95 −30%), the medians favour the old code, and the spread between runs of the *same* jar (572 ms to 20 s) is far larger than any difference between the jars. Two findings explain why:
+1. **The writes were never the main cost.** With one client, a whole receipt POST takes ~35 ms, so running three writes in parallel can save only a few ms. The 1 s p95 in round 1 is queueing under 20 concurrent users, not the sum of the write latencies. The round-1 diagnosis ("sequential writes cause the 1.07 s p95") was wrong.
+2. **Big stalls are outside the app.** In one extra diagnostic run, JMeter reported p95 69 s while the app's own `http.server.requests` timer for the same 200 requests had mean 1.04 s and max 3.3 s, and Mongo inserts averaged 24 ms. Another run had a 65 s gap between two requests of one JMeter thread with no slow response. So these stalls are in the path JMeter (container) → `host.docker.internal` → the Mac, or in the busy VM, not in the service.
+Also seen: with `-Djdk.tracePinnedThreads=short`, the AWS SDK's Apache HTTP client pins virtual threads (`synchronized` in `AbstractConnPool`, JDK 21). It didn't cause a failure, but it limits how much virtual threads help with this client.
+
+Kept the parallel writes anyway: the code is correct, tested, and never slower for one client. Next step to actually find the p95 bottleneck: run JMeter on the host (not in Docker), stop the unrelated k8s stack, and add per-store timers (DynamoDB/S3/SQS) to see which dependency queues under load; try the AWS CRT or URL-connection HTTP client to avoid pinning.
+
+## What broke this round (and the fix)
+
+15. **First `mvnw verify` failed for environment reasons**: `ElasticsearchReceiptClientIT` timed out waiting for ES to start (60 s), and `ReceiptFlowIT` hung for 15+ min in the test's HTTP client with no request in flight on the server (thread dump: all Tomcat threads idle). The compose stack (LocalStack + Lambda containers, Mongo, Azurite, Prometheus, WireMock) and the k8s stack were all running in the 5.8 GB VM. Fix: `docker compose down` before `mvnw verify` (tests start their own containers); the rerun passed completely (step 23).
+16. **Map order in the error**: `ReceiptWriteException.failedStores()` used `Map.copyOf`, which doesn't keep insertion order, so the test expecting `[dynamodb, mongo]` got `[mongo, dynamodb]`. Fix: unmodifiable `LinkedHashMap` copy.
+17. **Port clash avoided**: a local Postgres already listens on 5432, so compose publishes Postgres on 5433 and `application.yml` points there.

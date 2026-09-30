@@ -4,23 +4,26 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Receiver side of {@link WebhookSigner}. Three checks, in this order:
  * 1. signature matches (constant-time compare, so timing doesn't leak how many bytes matched),
  * 2. timestamp is within the tolerance window (old captures can't be replayed next week),
  * 3. the event id hasn't been seen inside the window (an exact replay within 5 minutes is also rejected).
+ * Seen ids live in a {@link SeenEventStore}: PostgreSQL in the app (survives restarts), memory in tests/helpers.
  */
 public class WebhookVerifier {
     private final String secret;
     private final Duration tolerance;
     private final Clock clock;
-    private final Map<String, Long> seenEventIds = new ConcurrentHashMap<>();
+    private final SeenEventStore seen;
 
     public WebhookVerifier(String secret, Duration tolerance, Clock clock) {
-        this.secret = secret; this.tolerance = tolerance; this.clock = clock;
+        this(secret, tolerance, clock, SeenEventStore.inMemory());
+    }
+
+    public WebhookVerifier(String secret, Duration tolerance, Clock clock, SeenEventStore seen) {
+        this.secret = secret; this.tolerance = tolerance; this.clock = clock; this.seen = seen;
     }
 
     public void verify(String header, String body, String eventId) {
@@ -40,8 +43,8 @@ public class WebhookVerifier {
         }
         long now = clock.instant().getEpochSecond();
         if (Math.abs(now - t) > tolerance.toSeconds()) throw new Rejected("timestamp outside tolerance");
-        seenEventIds.values().removeIf(ts -> now - ts > tolerance.toSeconds()); // forget ids older than the window
-        if (seenEventIds.putIfAbsent(eventId, t) != null) throw new Rejected("replayed event " + eventId);
+        if (eventId == null || eventId.isBlank()) throw new Rejected("missing event id");
+        if (!seen.markSeen(eventId, t, now, tolerance.toSeconds())) throw new Rejected("replayed event " + eventId);
     }
 
     public static class Rejected extends RuntimeException {

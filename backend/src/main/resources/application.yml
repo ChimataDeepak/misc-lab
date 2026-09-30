@@ -6,6 +6,16 @@ spring:
   graphql:
     graphiql:
       enabled: true
+  datasource:
+    url: jdbc:postgresql://localhost:5433/misclab
+    username: misclab
+    password: misclab     # lab value (docker-compose); real one comes from a secret store
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate  # Flyway owns the schema; Hibernate only checks the entities match it
+  flyway:
+    enabled: true
   data:
     mongodb:
       uri: mongodb://localhost:27017/misclab

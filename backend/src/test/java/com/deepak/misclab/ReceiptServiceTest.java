@@ -1,6 +1,7 @@
 package com.deepak.misclab;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -68,5 +69,56 @@ class ReceiptServiceTest {
 
         assertThat(out).hasSize(n).allSatisfy(r -> assertThat(r.usdAmount()).isEqualByComparingTo("0.12"));
         assertThat(out).extracting(Receipt::payer).containsExactlyElementsOf(reqs.stream().map(Receipt.Request::payer).toList());
+    }
+
+    /** Same latch trick: DynamoDB, S3 and Mongo each wait until all three have started -> they ran concurrently. */
+    @Test
+    void createRunsTheThreeWritesInParallelThenPublishes() {
+        when(fx.rateToUsd("INR")).thenReturn(new BigDecimal("0.012"));
+        when(sqs.getQueueUrl(any(Consumer.class))).thenReturn(GetQueueUrlResponse.builder().queueUrl("q").build());
+        CountDownLatch allStarted = new CountDownLatch(3);
+        org.mockito.stubbing.Answer<Object> rendezvous = inv -> {
+            allStarted.countDown();
+            if (!allStarted.await(2, TimeUnit.SECONDS)) throw new IllegalStateException("writes were not concurrent");
+            return null;
+        };
+        doAnswer(rendezvous).when(table).putItem(any(ReceiptItem.class));
+        when(s3.putObject(any(Consumer.class), any(RequestBody.class))).thenAnswer(rendezvous);
+        when(audit.save(any(AuditLog.class))).thenAnswer(rendezvous);
+
+        service.create(new Receipt.Request("deepak", new BigDecimal("1000"), "INR"));
+
+        var order = inOrder(table, s3, audit, sqs);
+        order.verify(sqs).sendMessage(any(Consumer.class)); // event only after the writes returned
+        verify(sqs, times(1)).sendMessage(any(Consumer.class));
+    }
+
+    @Test
+    void failedWriteFailsTheRequestAndPublishesNoEvent() {
+        when(fx.rateToUsd("INR")).thenReturn(new BigDecimal("0.012"));
+        when(s3.putObject(any(Consumer.class), any(RequestBody.class))).thenThrow(new IllegalStateException("s3 down"));
+
+        assertThatThrownBy(() -> service.create(new Receipt.Request("deepak", new BigDecimal("1000"), "INR")))
+                .isInstanceOf(ReceiptService.ReceiptWriteException.class)
+                .hasMessageContaining("write failed on s3")
+                .hasRootCauseMessage("s3 down")
+                .satisfies(e -> assertThat(((ReceiptService.ReceiptWriteException) e).failedStores()).containsExactly("s3"));
+        verify(table).putItem(any(ReceiptItem.class));   // the other writes still ran (not atomic, documented)
+        verify(audit).save(any(AuditLog.class));
+        verify(sqs, never()).sendMessage(any(Consumer.class));
+        assertThat(registry.counter("receipts_issued").count()).isZero();
+    }
+
+    @Test
+    void everyFailedStoreIsReported() {
+        when(fx.rateToUsd("INR")).thenReturn(new BigDecimal("0.012"));
+        doThrow(new IllegalStateException("ddb down")).when(table).putItem(any(ReceiptItem.class));
+        when(audit.save(any(AuditLog.class))).thenThrow(new IllegalStateException("mongo down"));
+
+        assertThatThrownBy(() -> service.create(new Receipt.Request("deepak", BigDecimal.TEN, "INR")))
+                .isInstanceOf(ReceiptService.ReceiptWriteException.class)
+                .satisfies(e -> assertThat(((ReceiptService.ReceiptWriteException) e).failedStores()).containsExactly("dynamodb", "mongo"))
+                .satisfies(e -> assertThat(e.getSuppressed()).hasSize(1));
+        verify(sqs, never()).sendMessage(any(Consumer.class));
     }
 }
