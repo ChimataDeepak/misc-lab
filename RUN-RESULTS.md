@@ -159,3 +159,6 @@ Same machine (Rancher Desktop, macOS arm64, Corretto 21). Compose stack **down**
 - Webhook retry: policy + state machine tested; not yet wired into a scheduled relay over `webhook_outbox`.
 - Redis, RabbitMQ, Cassandra run only in Testcontainers; not added to `docker-compose.yml` or exercised by a live app run this round.
 - Jakarta EE: APIs used inside Spring Boot (JPA, Bean Validation, Servlet). No Jakarta EE application server.
+
+### Fix 22 (verifier re-run): Cassandra schema DDL timeout
+Re-running all round-4 tests together, `CassandraReceiptHistoryIT.createSchema` failed with `DriverTimeout Query timed out after PT2S`: CREATE KEYSPACE/TABLE on a freshly started Cassandra under load from other containers exceeded the driver's default 2 s request timeout. The schema session now uses a 30 s request timeout; the IT passes 3/3 on re-run. All other round-4 tests (SOAP 2, dashboard 3, webhook retry 10, validation 4, Redis 3, RabbitMQ 3, Oracle 4) passed on the verifier's re-run.

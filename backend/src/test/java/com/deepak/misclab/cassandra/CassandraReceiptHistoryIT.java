@@ -6,6 +6,9 @@ import com.datastax.oss.driver.api.core.CqlSession;
 import com.deepak.misclab.Receipt;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import com.datastax.oss.driver.api.core.config.DefaultDriverOption;
+import com.datastax.oss.driver.api.core.config.DriverConfigLoader;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -35,7 +38,10 @@ class CassandraReceiptHistoryIT {
         String cql = new ClassPathResource("cassandra/schema.cql").getContentAsString(StandardCharsets.UTF_8)
                 .replaceAll("(?m)^--.*$", "");
         try (CqlSession s = CqlSession.builder().addContactPoint(cassandra.getContactPoint())
-                .withLocalDatacenter(cassandra.getLocalDatacenter()).build()) {
+                .withLocalDatacenter(cassandra.getLocalDatacenter())
+                .withConfigLoader(DriverConfigLoader.programmaticBuilder()
+                        .withDuration(DefaultDriverOption.REQUEST_TIMEOUT, Duration.ofSeconds(30)).build())
+                .build()) {
             for (String stmt : cql.split(";")) if (!stmt.isBlank()) s.execute(stmt.trim());
         }
     }
