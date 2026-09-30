@@ -26,7 +26,7 @@ class ElasticsearchReceiptClientTest {
 
     @Test
     void indexPutsDocThenSearchReturnsId() {
-        es.stubFor(put(urlEqualTo("/receipts/_doc/r1")).willReturn(okJson("{\"result\":\"created\"}")));
+        es.stubFor(put(urlEqualTo("/receipts/_doc/r1?refresh=wait_for")).willReturn(okJson("{\"result\":\"created\"}")));
         es.stubFor(post(urlEqualTo("/receipts/_search"))
                 .willReturn(okJson("{\"hits\":{\"hits\":[{\"_id\":\"r1\"}]}}")));
 
@@ -36,7 +36,7 @@ class ElasticsearchReceiptClientTest {
         client.index(r);
         assertThat(client.searchPayer("deepak")).containsExactly("r1");
 
-        es.verify(putRequestedFor(urlEqualTo("/receipts/_doc/r1")).withHeader("Content-Type", equalTo("application/json")));
+        es.verify(putRequestedFor(urlEqualTo("/receipts/_doc/r1?refresh=wait_for")).withHeader("Content-Type", equalTo("application/json")));
         es.verify(postRequestedFor(urlEqualTo("/receipts/_search")));
     }
 }

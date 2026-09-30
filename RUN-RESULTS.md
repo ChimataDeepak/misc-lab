@@ -40,3 +40,49 @@ export JAVA_HOME=$HOME/Library/Java/JavaVirtualMachines/corretto-21.0.11/Content
 docker compose up -d && (cd lambda && ./mvnw -q package) && ./infra/tf.sh init && ./infra/tf.sh apply -auto-approve
 (cd backend && ./mvnw verify)
 ```
+
+---
+
+# 30 Sep 2026, round 2: payments, Python, GCP, Go + verification of the Cursor additions
+
+Same machine (Rancher Desktop, macOS arm64, Corretto 21). Env as in "How to re-run" above.
+
+| # | Step | Command | Result |
+|---|---|---|---|
+| 13 | Backend, full | `cd backend && ./mvnw verify` | PASS: **43 unit** (surefire) + **4 IT** (failsafe: `ReceiptFlowIT`, `GcpReceiptFlowIT`, `AzureBlobReceiptArchiveIT`, `ElasticsearchReceiptClientIT`), ~94 s. Run 3× in a row green after fix 12 below |
+| 14 | Payments | included in 13 | PASS: `PaymentIntentTest` 13, `PaymentServiceTest` 6, `WebhookSignatureTest` 8, `PaymentApiIntegrationTest` 1 (full lifecycle via MVC; WireMock merchant got 4 webhooks, all verified; replay → 401) |
+| 15 | GCP | `GcpReceiptFlowIT` | PASS: POST receipt → GCS object read back from fake-gcs-server, Pub/Sub message pulled from the emulator with `type`/`receiptId` attributes |
+| 16 | Elasticsearch (real) | `ElasticsearchReceiptClientIT` | PASS against `elasticsearch:8.15.3` (was only WireMock before; see fix 13) |
+| 17 | Python | `cd python-svc && .venv/bin/pytest -q` | PASS: 7 tests |
+| 18 | Python live | backend jar + LocalStack/Mongo/WireMock, 3× POST, `receipt-insights --url http://localhost:8090 --top 2` | PASS: count 3, totalUsd 62.24, top payers ben 50 / asha 12.24 |
+| 19 | Go | `docker run --rm -v "$PWD":/src -w /src golang:1.23-alpine go test -v ./...` in `go-verify/` | PASS: 2 test funcs, 9 cases (incl. the vector shared with Java). Go isn't installed on the Mac and there's no Homebrew, so it ran in the official Go image |
+| 20 | Spark | `cd spark && ../backend/mvnw test` | PASS: 1 test (`local[1]` payer count) |
+| 21 | React | `cd frontend && npm test -- --run && npm run build` | PASS: 4 tests, build 585 ms |
+| 22 | Angular | `cd frontend-angular && npm test` | PASS: 3 tests (2 `ReceiptApi` + 1 new TestBed component test), after fix 11 |
+
+## Verification of what Cursor added earlier
+
+| Skill | Status | Evidence |
+|---|---|---|
+| GraphQL | VERIFIED | `ReceiptGraphqlControllerTest` (2, GraphQlTester over the schema). Files were untracked and are now committed |
+| gRPC / protobuf | VERIFIED | `ReceiptGrpcServiceTest` (2); protoc codegen runs in the build. Files were untracked and are now committed |
+| Angular | VERIFIED after fix 11 | new `app.component.spec.ts` renders the component, types an id, clicks Load and asserts the output |
+| Azure Blob | VERIFIED (component) | `AzureBlobReceiptArchiveIT` against Azurite 3.33 + unit test. Note: the archive is **not wired into** `POST /api/receipts`; it's a standalone component |
+| Elasticsearch | VERIFIED after fix 13 | new IT against real ES 8.15.3 |
+| Spark | VERIFIED | `ReceiptPayerCountTest` on `local[1]` |
+| OIDC resource server | VERIFIED | `OidcReceiptControllerTest` (401 without a JWT; claims echoed with an HS256 JWT). HMAC key, not a JWKS IdP |
+| LLM client | VERIFIED (stub only) | `LlmClientTest` against a WireMock OpenAI-compatible endpoint; no real model called |
+| PCF manifest | NOT VERIFIED | no `cf` CLI and no Cloud Foundry space; only checked that the jar path in `manifest.yml` matches the built jar |
+
+## What broke this round (and the fix)
+
+11. **Angular component could never run**: `constructor(private api: ReceiptApi)` needs decorator metadata that only the Angular compiler emits. The lab has no Angular CLI, so the new component test failed with `NG0202: This constructor is not compatible with Angular Dependency Injection`. Fix: `private readonly api = inject(ReceiptApi)`. Test setup: `@angular/compiler` (JIT) + zoneless change detection in Vitest/jsdom.
+12. **Flaky `ReceiptFlowIT` (~1 in 3)**: `Connection refused` on LocalStack's mapped port during Spring startup. Testcontainers saw LocalStack's "Ready" log inside the container before Rancher Desktop had forwarded the port to the Mac. Fix: `HostPortReady.awaitHttp(...)` polls `/_localstack/health` from the host before handing the endpoint to Spring (also used for fake-gcs and ES). 3 consecutive full runs green after it.
+13. **Elasticsearch client didn't work against real ES**: the WireMock test passed, but against ES 8.15 the search right after indexing returned nothing (near-real-time refresh). The query was also built by string concatenation (a backslash in a payer name broke the JSON), and `IOException` wrongly set the thread's interrupt flag. Fix: `?refresh=wait_for` on index, query built with Jackson, and separate catch blocks. Proven by the new IT, which fails on the old code.
+14. **New read endpoint**: `GET /api/receipts?limit=` (DynamoDB scan, capped at 500) added for the Python service; asserted in `ReceiptFlowIT`.
+
+## Still open / honest limits
+- Payments state, idempotency keys and the webhook outbox are in memory. Next step: DB-backed idempotency table + transactional outbox + retry with backoff.
+- GCP ran against emulators only. The real-GCP path (ADC credentials) is written but not run.
+- Go ran in Docker, not a local toolchain.
+- p95 latency finding from round 1 is unchanged (not re-measured).

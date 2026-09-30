@@ -14,19 +14,24 @@ Branch `miscellaneous` of banking-backend is an **orphan branch**: no shared his
 | Concurrency | `POST /api/receipts/batch` | Parallel FX conversion with `CompletableFuture` on virtual threads |
 | Observability / SRE | `observability/`, Micrometer in backend | Prometheus metrics (counter, histogram), JSON logs, 99.5% SLO multi-window burn-rate alerts |
 | React + TypeScript | `frontend/` | Form + list, custom hook, Vitest + Testing Library |
-| Angular (standalone) | `frontend-angular/` | Tiny receipt-id lookup against the same REST API; Vitest on `ReceiptApi` |
+| Angular (standalone) | `frontend-angular/` | Tiny receipt-id lookup against the same REST API; Vitest on `ReceiptApi` + a TestBed (JIT, zoneless) component test that types an id, clicks Load and checks the rendered result |
 | Selenium | `e2e/` | Page Object + Chromium in Testcontainers |
 | JMeter | `perf/` | 20-user load test with assertions and HTML report |
 | Testcontainers, CI | `backend/…/*IT.java`, `.github/workflows/ci.yml` | LocalStack + Mongo integration tests; CI for all parts |
 | GraphQL | `backend/…/ReceiptGraphqlController.java`, `graphql/schema.graphqls` | `receipt(id)` query over the same service as REST |
 | gRPC / protobuf | `backend/src/main/proto/receipts.proto`, `ReceiptGrpcService` | `GetReceipt` RPC; unit tests, no extra port in `mvnw test` |
-| Angular (tiny) | `frontend-angular/` | Standalone component + `ReceiptApi` GET lookup; Vitest on the API |
 | Azure Blob (Azurite) | `AzureBlobReceiptArchive.java` | Receipt JSON to Azure Blob via official SDK; emulator, not a real subscription |
-| Elasticsearch | `ElasticsearchReceiptClient.java` | Index + payer search over ES HTTP; WireMock stand-in (optional Testcontainers URL) |
+| Elasticsearch | `ElasticsearchReceiptClient.java` | Index + payer search over the ES REST API; WireMock unit test **and** `ElasticsearchReceiptClientIT` against real Elasticsearch 8.15 in Testcontainers |
 | Spark (local) | `spark/ReceiptPayerCount.java` | `local[1]` payer word-count on receipt lines; not Databricks/Hadoop |
 | OAuth2/OIDC resource server | `OidcResourceServerConfig`, `/api/oidc/me` | JWT issuer+audience on one path; HMAC lab IdP, not Okta auth-code |
 | LLM HTTP stub | `LlmClient.java` | OpenAI-compatible `/v1/chat/completions` against WireMock; no real key |
-| PCF / Cloud Foundry | `manifest.yml` | Deploy descriptor only; no live PCF space |
+| PCF / Cloud Foundry | `manifest.yml` | Deploy descriptor only; no live PCF space (**not verified**) |
+| **Payments** | `backend/…/payments/` | PaymentIntent state machine (CREATED→AUTHORIZED→CAPTURED→partial/full REFUND, VOID), `Idempotency-Key` on create/capture/refund, integer minor-unit money, HMAC-SHA256-signed webhooks with timestamp + replay protection and a verifier |
+| **Python / FastAPI** | `python-svc/` | `receipt-insights`: `GET /insights/summary` (totals by currency, top payers) from the backend's `GET /api/receipts`; CLI; pytest; Dockerfile |
+| **GCP Pub/Sub + Cloud Storage** | `backend/…/gcp/`, profile `gcp` | `ReceiptCreated` to Pub/Sub, receipt JSON to GCS with the official Java clients; Testcontainers IT on the Pub/Sub emulator + fake-gcs-server |
+| **Go** | `go-verify/` | CLI that verifies the payment webhook signatures; shares a test vector with the Java signer |
+
+Verification status per skill (what a passing test actually exercises) is in RUN-RESULTS.md, section "30 Sep 2026, round 2".
 
 Proof it runs: **[RUN-RESULTS.md](RUN-RESULTS.md)** — every step, its command, pass/fail and numbers, plus the 10 real problems hit and fixed.
 

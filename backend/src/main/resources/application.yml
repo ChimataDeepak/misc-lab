@@ -29,6 +29,12 @@ misclab:
     container: receipts
   oidc:
     hmac-secret: "misclab-oidc-hmac-secret-key-32b!"
+  gcp:                      # used only with profile "gcp"
+    project-id: misclab-local
+    topic: receipt-created
+    bucket: misc-receipts-gcs
+    pubsub-emulator-host: localhost:8085   # blank for real GCP
+    storage-endpoint: http://localhost:4443 # blank for real GCP
   es:
     base-url: http://localhost:9200
   llm:
@@ -36,6 +42,9 @@ misclab:
     api-key: test-not-a-real-key
   poller:
     enabled: true
+  payments:
+    webhook-secret: whsec_misclab_lab_only   # lab value; real one comes from a secret store
+    webhook-url: ""                         # blank = keep in outbox only; set to POST signed events
 fx:
   base-url: http://localhost:8099
   connect-timeout: 500ms

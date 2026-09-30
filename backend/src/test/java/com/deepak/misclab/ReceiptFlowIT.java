@@ -45,7 +45,7 @@ class ReceiptFlowIT {
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
-        r.add("misclab.aws.endpoint", () -> localstack.getEndpoint().toString());
+        r.add("misclab.aws.endpoint", () -> HostPortReady.awaitHttp(localstack.getEndpoint().toString(), "/_localstack/health"));
         r.add("misclab.aws.region", localstack::getRegion);
         r.add("fx.base-url", fxApi::baseUrl);
     }
@@ -68,6 +68,8 @@ class ReceiptFlowIT {
         assertThat(r.usdAmount()).isEqualByComparingTo("12.00");
         // DynamoDB round-trip via the enhanced client
         assertThat(service.get(r.receiptId()).payer()).isEqualTo("deepak");
+        // list endpoint (read by python-svc receipt-insights) includes it
+        assertThat(http.getForObject("/api/receipts?limit=10", Receipt[].class)).extracting(Receipt::receiptId).contains(r.receiptId());
         // S3 object exists
         assertThat(s3.getObjectAsBytes(b -> b.bucket("misc-receipts").key("receipts/" + r.receiptId() + ".json"))
                 .asUtf8String()).contains(r.receiptId());

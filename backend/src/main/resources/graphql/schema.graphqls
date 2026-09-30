@@ -1,0 +1,13 @@
+type Query {
+  receipt(id: ID!): Receipt
+}
+
+"""Money fields are strings so GraphQL Float cannot round paise."""
+type Receipt {
+  receiptId: ID!
+  payer: String!
+  amount: String!
+  currency: String!
+  usdAmount: String!
+  createdAt: String!
+}

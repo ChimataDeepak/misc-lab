@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package receipts;
+
+option java_multiple_files = true;
+option java_package = "com.deepak.misclab.grpc";
+
+service ReceiptGrpc {
+  rpc GetReceipt (GetReceiptRequest) returns (ReceiptReply);
+}
+
+message GetReceiptRequest {
+  string id = 1;
+}
+
+message ReceiptReply {
+  string receipt_id = 1;
+  string payer = 2;
+  string amount = 3;
+  string currency = 4;
+  string usd_amount = 5;
+  bool found = 6;
+}

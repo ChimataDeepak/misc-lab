@@ -1,4 +1,4 @@
-import { Component, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { ReceiptApi } from './receipt-api';
 
 @Component({
@@ -15,7 +15,9 @@ export class AppComponent {
   id = signal('');
   result = signal('');
 
-  constructor(private readonly api: ReceiptApi) {}
+  // inject() instead of a constructor parameter: constructor DI needs decorator metadata that only the Angular
+  // compiler emits; inject() works in JIT (tests) and AOT alike.
+  private readonly api = inject(ReceiptApi);
 
   async load(): Promise<void> {
     this.result.set(await this.api.get(this.id()));

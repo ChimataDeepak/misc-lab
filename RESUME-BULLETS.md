@@ -12,6 +12,14 @@
 - Archived receipt JSON to Azure Blob Storage with the Azure SDK against Azurite (local emulator). Not AKS, App Service, or a paid Azure account.
 - Exposed the same receipt lookup as GraphQL (`receipt(id)` on `/graphql`, money as strings) and as a protobuf `GetReceipt` gRPC service; both are adapters over `ReceiptService`, covered by slice/unit tests. A tiny Angular standalone component calls the REST GET for Citi/Broadridge-style UI titles (not a full Angular app).
 
+- Built a payment lifecycle for receipts: a PaymentIntent state machine (created, authorized, captured, partial and full refund, void) with every one of the 36 state pairs tested, integer minor-unit money, `Idempotency-Key` handling on create/capture/refund (retries return the stored result; key reuse with a different body returns 422; 50 concurrent retries produce one payment), and HMAC-SHA256-signed webhooks with timestamp-window and event-id replay protection. Built and tested locally: 28 unit tests plus an end-to-end REST test in which a mock merchant verifies all 4 webhooks.
+- Wrote a Go CLI that verifies those webhook signatures, pinned to the same test vector as the Java signer so the two implementations can't drift (Go tests run in the official Go container).
+- Built `receipt-insights`, a Python FastAPI service and CLI that reads receipts from the Spring Boot API and reports totals by currency and top payers using `Decimal` end to end; 7 pytest tests with a mocked HTTP transport, a Dockerfile, and a live run against the Java service.
+- Added a GCP path behind a Spring profile: receipts archived to Cloud Storage and `ReceiptCreated` published to Pub/Sub with the official Google Cloud Java clients, verified by a Testcontainers integration test against the Pub/Sub emulator and fake-gcs-server (emulators, not a live GCP project).
+- Tested the receipt search client against real Elasticsearch 8 in Testcontainers, which exposed two bugs a mock-only test had hidden: search-after-index returned nothing (fixed with `refresh=wait_for`) and the query JSON was built by string concatenation (now built with Jackson).
+- Added an OAuth2 resource-server chain that validates JWT issuer and audience on `/api/oidc/**` (tested with signed tokens; HMAC key rather than a JWKS identity provider), and a local Spark (`local[1]`) job counting payers, tested locally.
+- Added a component test for the Angular lookup (TestBed, JIT, zoneless) that exposed a dependency-injection bug (NG0202) in the component; fixed with `inject()`.
+
 ## Interview talking points (from the 10 fixes in RUN-RESULTS.md)
 
 - **Container runtime plumbing:** Testcontainers couldn't find Rancher Desktop's Docker socket, and docker-java's default API 1.32 was rejected by Docker 29 (min 1.41) — fixed with `DOCKER_HOST`/socket override and `api.version=1.44`.
@@ -21,3 +29,6 @@
 - **Apple silicon images:** `standalone-chrome` is amd64-only; switched to multi-arch `selenium/standalone-chromium`.
 - **Browser security in tests:** Vite's DNS-rebinding protection blocked `host.testcontainers.internal` (fixed via `allowedHosts`), and a forwarded `Origin` header caused CORS 403s — the dev proxy strips `Origin` since proxied calls are same-origin.
 - **Honest perf finding:** p95 ~1.07 s because S3 → DynamoDB → Mongo → SQS run sequentially; next step is parallelising the independent writes with `CompletableFuture` and re-measuring.
+- **Mocks can hide real behaviour:** the Elasticsearch client passed its WireMock test but returned nothing against real ES (near-real-time refresh). An integration test against the real engine caught it.
+- **Flaky test root cause:** Testcontainers reported LocalStack as ready before Rancher Desktop forwarded its port to the host, so ~1 in 3 runs failed with `Connection refused`. The fix polls the health endpoint from the host side instead of adding retries or sleeps.
+- **Idempotency and exactly-once:** the network can't give exactly-once delivery. Idempotency keys make retries safe on the request side, and event-id dedupe makes webhooks safe on the receiver side.

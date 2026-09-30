@@ -40,3 +40,40 @@ Run unit tests: `./mvnw test` (no Docker). Integration tests: `./mvnw verify` (T
 
 ## Integration test
 `ReceiptFlowIT` starts LocalStack (S3, SQS, DynamoDB) and MongoDB via Testcontainers, stubs FX with WireMock, and checks the whole POST flow end to end, including the poller consuming the event and the Prometheus output.
+
+## Payments: PaymentIntent lifecycle, idempotency, signed webhooks (`payments/`)
+
+**What:** `POST /api/payments` (Idempotency-Key required) creates a payment for a receipt. Then `/{id}/authorize`,
+`/{id}/capture` (Idempotency-Key), `/{id}/refund {amountMinor}` (Idempotency-Key, partial or full) and `/{id}/void`.
+- **State machine** (`PaymentStatus.next()`): CREATED→AUTHORIZED→CAPTURED→PARTIALLY_REFUNDED*→REFUNDED. VOIDED is reachable only from CREATED or AUTHORIZED. Anything else is `409` (`illegal transition CAPTURED -> VOIDED`).
+- **Money** (`Money`) is `long` minor units plus an ISO-4217 code. Mixed currencies throw, refunds can't exceed what was captured, and `Math.addExact` rules out silent overflow.
+- **Idempotency** (`IdempotencyStore`): same key and same body returns the stored result (no second capture or refund, no second webhook). Same key with a different body is `422`, and a missing key is `400`. `ConcurrentHashMap.computeIfAbsent` means 50 concurrent retries create exactly one payment (tested).
+- **Webhooks** (`WebhookSigner`, `WebhookPublisher`): every transition POSTs a JSON event to `misclab.payments.webhook-url` with `Misclab-Signature: t=<unix>,v1=<HMAC-SHA256("t.body")>` and `Misclab-Event-Id`. **Verifier** (`WebhookVerifier`, also `POST /api/payments/webhooks/receive`): constant-time compare, 5-minute timestamp window, and event-id replay cache.
+
+**Tests:** `PaymentIntentTest` (13: the full 6×6 transition table plus every lifecycle path and money rule), `PaymentServiceTest` (6: idempotent retries, key reuse, 50-thread create), `WebhookSignatureTest` (8: known vector shared with go-verify, tamper, wrong secret, moved or stale timestamp, replay, malformed), and `PaymentApiIntegrationTest` (the whole lifecycle through Spring MVC, with a WireMock "merchant" receiving 4 webhooks that each verify).
+
+**Honest limits:** everything is in memory (payments, idempotency keys, outbox). A real system would use a DB table with a unique key on (scope, idempotency key), a transactional outbox, and retried delivery with backoff. There is one full capture (no multi-capture) and no real card network or PSP.
+
+**How I'd explain it in an interview:** "Payments are a state machine. I kept the allowed-transition table in one enum and
+test all 36 pairs. Amounts are integer minor units. Create, capture and refund take an Idempotency-Key, so a client retry after a timeout
+can't double-charge or double-refund. A key reused with a different body is rejected, not silently replayed. Webhooks are
+HMAC-signed over timestamp + body. The receiver checks the signature in constant time, rejects anything outside 5 minutes,
+and remembers event ids to stop replays. A Go verifier shares the same test vector."
+
+## GCP: Pub/Sub + Cloud Storage (`gcp/`, profile `gcp`)
+
+**What:** with `--spring.profiles.active=gcp`, each new receipt is also archived as JSON to Cloud Storage
+(`misc-receipts-gcs/receipts/<id>.json`) and a `ReceiptCreated` message is published to Pub/Sub topic `receipt-created`, with
+`type` and `receiptId` attributes. It uses the official `google-cloud-pubsub` / `google-cloud-storage` clients (libraries-bom 26.50.0).
+Without the profile nothing GCP loads and the AWS path is unchanged. `ReceiptService` calls an optional list of
+`ReceiptEventSink`s, and GCP is one of them.
+
+**Local:** the Pub/Sub emulator (`gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators`) and `fsouza/fake-gcs-server`. Emulator mode uses
+a plaintext gRPC channel and `NoCredentials`. Blank `pubsub-emulator-host`/`storage-endpoint` means real GCP with Application Default Credentials (not tried).
+
+**Test:** `GcpReceiptFlowIT` (Testcontainers: LocalStack + Mongo + Pub/Sub emulator + fake-gcs + WireMock FX) POSTs a receipt,
+reads the GCS object back, pulls the Pub/Sub message from a subscription, and checks its attributes and body.
+
+**How I'd explain it in an interview:** "Same domain event, second cloud. S3 maps to Cloud Storage and SQS maps to Pub/Sub. The
+difference that matters: Pub/Sub is topic-plus-subscription fan-out with at-least-once delivery, so consumers dedupe on receiptId. I
+waited on the publish future so 'created' means 'Pub/Sub accepted it'. I tested against the official emulator, not a real project."

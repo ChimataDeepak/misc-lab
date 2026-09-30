@@ -20,6 +20,9 @@ public class ReceiptController {
     @PostMapping("/batch")
     public List<Receipt> batch(@RequestBody List<Receipt.Request> reqs) { return service.convertBatch(reqs); }
 
+    @GetMapping
+    public List<Receipt> list(@RequestParam(defaultValue = "100") int limit) { return service.list(Math.max(1, Math.min(limit, 500))); }
+
     @GetMapping("/{id}")
     public ResponseEntity<Receipt> get(@PathVariable String id) {
         Receipt r = service.get(id);

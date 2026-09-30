@@ -31,7 +31,7 @@ public class ElasticsearchReceiptClient {
     public void index(Receipt receipt) {
         try {
             String body = json.writeValueAsString(receipt);
-            var req = HttpRequest.newBuilder(URI.create(baseUrl + "/receipts/_doc/" + receipt.receiptId()))
+            var req = HttpRequest.newBuilder(URI.create(baseUrl + "/receipts/_doc/" + receipt.receiptId() + "?refresh=wait_for"))
                     .header("Content-Type", "application/json")
                     .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                     .timeout(Duration.ofSeconds(3))
@@ -40,7 +40,9 @@ public class ElasticsearchReceiptClient {
             if (res.statusCode() >= 300) {
                 throw new IllegalStateException("ES index HTTP " + res.statusCode() + ": " + res.body());
             }
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }
@@ -48,7 +50,10 @@ public class ElasticsearchReceiptClient {
 
     public List<String> searchPayer(String payer) {
         try {
-            String q = "{\"query\":{\"match\":{\"payer\":\"" + payer.replace("\"", "") + "\"}}}";
+            // Build the query with Jackson, not string concat: a payer containing quotes or backslashes can't break the JSON.
+            var query = json.createObjectNode();
+            query.putObject("query").putObject("match").put("payer", payer);
+            String q = json.writeValueAsString(query);
             var req = HttpRequest.newBuilder(URI.create(baseUrl + "/receipts/_search"))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(q, StandardCharsets.UTF_8))
@@ -64,7 +69,9 @@ public class ElasticsearchReceiptClient {
                 ids.add(hit.path("_id").asText());
             }
             return ids;
-        } catch (IOException | InterruptedException e) {
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new IllegalStateException(e);
         }

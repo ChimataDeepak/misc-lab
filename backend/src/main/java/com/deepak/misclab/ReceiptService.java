@@ -33,10 +33,20 @@ public class ReceiptService {
     private final AwsProps props;
     private final ObjectMapper json;
     private final Counter created;
+    private final List<ReceiptEventSink> extraSinks;
     private volatile String queueUrl;
 
     public ReceiptService(FxClient fx, DynamoDbTable<ReceiptItem> table, S3Client s3, SqsClient sqs,
                           AuditLogRepository audit, AwsProps props, ObjectMapper json, MeterRegistry registry) {
+        this(fx, table, s3, sqs, audit, props, json, registry, List.of());
+    }
+
+    /** extraSinks: optional cloud targets (e.g. GCP Pub/Sub + GCS under profile "gcp"); empty by default = AWS only. */
+    @org.springframework.beans.factory.annotation.Autowired
+    public ReceiptService(FxClient fx, DynamoDbTable<ReceiptItem> table, S3Client s3, SqsClient sqs,
+                          AuditLogRepository audit, AwsProps props, ObjectMapper json, MeterRegistry registry,
+                          List<ReceiptEventSink> extraSinks) {
+        this.extraSinks = List.copyOf(extraSinks);
         this.fx = fx; this.table = table; this.s3 = s3; this.sqs = sqs; this.audit = audit; this.props = props; this.json = json;
         this.created = Counter.builder("receipts_issued").description("Receipts issued (not \"receipts_created\": Prometheus strips the OpenMetrics-reserved _created suffix)").register(registry);
     }
@@ -56,6 +66,7 @@ public class ReceiptService {
         sqs.sendMessage(b -> b.queueUrl(queueUrl()).messageBody(toJson(               // SQS
                 new ReceiptCreated("ReceiptCreated", r.receiptId(), r.usdAmount()))));
         audit.save(new AuditLog(null, "RECEIPT_CREATED", r.receiptId(), r.payer(), Instant.now())); // MongoDB
+        extraSinks.forEach(sink -> sink.onReceiptCreated(r, toJson(r)));   // e.g. GCP Pub/Sub + Cloud Storage
         created.increment();
         log.info("receipt created id={} usd={}", r.receiptId(), r.usdAmount());
         return r;
@@ -73,6 +84,11 @@ public class ReceiptService {
     public Receipt get(String id) {
         ReceiptItem item = table.getItem(Key.builder().partitionValue(id).build());
         return item == null ? null : item.toReceipt();
+    }
+
+    /** Small scan for read-only consumers (python-svc receipt-insights). Fine for a lab table; a big table would need a GSI/pagination. */
+    public List<Receipt> list(int limit) {
+        return table.scan(b -> b.limit(Math.min(limit, 500))).items().stream().limit(limit).map(ReceiptItem::toReceipt).toList();
     }
 
     String queueUrl() {
