@@ -19,6 +19,34 @@ spring:
   data:
     mongodb:
       uri: mongodb://localhost:27017/misclab
+    redis:
+      host: localhost
+      port: 6379
+  cache:
+    cache-names: fxRates,receipts   # known at startup so Micrometer binds cache.gets{result=hit|miss} for both
+    redis:
+      enable-statistics: true
+  rabbitmq:
+    host: localhost
+    port: 5672
+    listener:
+      simple:
+        default-requeue-rejected: false   # a failing message goes to the dead-letter exchange, never loops forever
+  cassandra:
+    keyspace-name: misclab
+    local-datacenter: datacenter1
+    contact-points: localhost:9042
+  webservices:
+    path: /ws
+  autoconfigure:
+    # Cassandra connects eagerly at startup; only turned on with misclab.cassandra.enabled=true
+    # (and by CassandraReceiptHistoryIT, which clears this list).
+    exclude:
+      - org.springframework.boot.autoconfigure.cassandra.CassandraAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.cassandra.CassandraDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.cassandra.CassandraReactiveDataAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.cassandra.CassandraRepositoriesAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.cassandra.CassandraReactiveRepositoriesAutoConfiguration
 logging:
   structured:
     format:
@@ -52,6 +80,14 @@ misclab:
     api-key: test-not-a-real-key
   poller:
     enabled: true
+  cache:
+    enabled: false          # true = Redis cache-aside for FX rates + receipt lookups (needs Redis)
+    fx-ttl: 10m
+    receipt-ttl: 1h
+  rabbit:
+    enabled: false          # true = publish ReceiptCreated to RabbitMQ + consume with a DLQ (needs RabbitMQ)
+  cassandra:
+    enabled: false          # true = receipts_by_payer time series in Cassandra (also remove the autoconfigure excludes)
   payments:
     webhook-secret: whsec_misclab_lab_only   # lab value; real one comes from a secret store
     webhook-url: ""                         # blank = keep in outbox only; set to POST signed events
@@ -68,6 +104,10 @@ management:
   health:
     circuitbreakers:
       enabled: true
+    redis:
+      enabled: false        # optional lab dependencies: don't mark the app DOWN when they aren't running
+    rabbit:
+      enabled: false
 resilience4j:
   retry:
     instances:

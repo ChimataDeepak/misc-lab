@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Contract first: this schema is the API. JAXB classes are generated from it (jaxb2-maven-plugin) and the WSDL
+     at /ws/receipts.wsdl is derived from it at runtime. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           xmlns:tns="http://deepak.com/misclab/receipts"
+           targetNamespace="http://deepak.com/misclab/receipts"
+           elementFormDefault="qualified">
+
+  <xs:element name="GetReceiptRequest">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="receiptId">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:minLength value="1"/>
+              <xs:maxLength value="128"/>
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="GetReceiptResponse">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="receipt" type="tns:Receipt"/>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="Receipt">
+    <xs:sequence>
+      <xs:element name="receiptId" type="xs:string"/>
+      <xs:element name="payer" type="xs:string"/>
+      <xs:element name="amount" type="xs:decimal"/>
+      <xs:element name="currency">
+        <xs:simpleType>
+          <xs:restriction base="xs:string"><xs:pattern value="[A-Z]{3}"/></xs:restriction>
+        </xs:simpleType>
+      </xs:element>
+      <xs:element name="usdAmount" type="xs:decimal"/>
+      <xs:element name="createdAt" type="xs:dateTime"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

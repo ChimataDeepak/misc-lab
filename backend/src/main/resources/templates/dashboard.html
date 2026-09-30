@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Receipts dashboard</title>
+  <link rel="stylesheet" th:href="@{/css/dashboard.css}" href="/css/dashboard.css">
+</head>
+<body>
+<header class="top">
+  <h1>Receipts</h1>
+  <p class="muted"><span th:text="${#lists.size(receipts)}">0</span> latest receipts</p>
+</header>
+<main>
+  <section class="cards" aria-label="Totals">
+    <article class="card total">
+      <h2>Total (USD)</h2>
+      <p class="figure" id="usd-total" th:text="${#numbers.formatDecimal(usdTotal, 1, 'COMMA', 2, 'POINT')}">0.00</p>
+    </article>
+    <article class="card" th:each="e : ${usdByCurrency}">
+      <h2 th:text="${e.key}">INR</h2>
+      <p class="figure" th:text="${#numbers.formatDecimal(e.value, 1, 'COMMA', 2, 'POINT')}">0.00</p>
+    </article>
+  </section>
+
+  <p class="empty" th:if="${#lists.isEmpty(receipts)}">No receipts yet.</p>
+  <div class="table-wrap" th:unless="${#lists.isEmpty(receipts)}">
+    <table>
+      <thead>
+      <tr><th scope="col">Receipt</th><th scope="col">Payer</th><th scope="col" class="num">Amount</th>
+          <th scope="col" class="num">USD</th><th scope="col">Created (UTC)</th></tr>
+      </thead>
+      <tbody>
+      <!-- th:text escapes HTML, so a payer name like <script> is shown as text, never executed -->
+      <tr class="receipt-row" th:each="r : ${receipts}" th:attr="data-receipt-id=${r.receiptId}">
+        <td data-label="Receipt" class="mono" th:text="${r.receiptId}">id</td>
+        <td data-label="Payer" th:text="${r.payer}">payer</td>
+        <td data-label="Amount" class="num" th:text="${r.amount.toPlainString() + ' ' + r.currency}">0 XXX</td>
+        <td data-label="USD" class="num" th:text="${r.usdAmount.toPlainString()}">0.00</td>
+        <td data-label="Created" th:text="${r.createdAt}">time</td>
+      </tr>
+      </tbody>
+    </table>
+  </div>
+</main>
+</body>
+</html>

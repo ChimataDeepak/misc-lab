@@ -22,6 +22,13 @@
 - Added an OAuth2 resource-server chain that validates JWT issuer and audience on `/api/oidc/**` (tested with signed tokens; HMAC key rather than a JWKS identity provider), and a local Spark (`local[1]`) job counting payers, tested locally.
 - Added a component test for the Angular lookup (TestBed, JIT, zoneless) that exposed a dependency-injection bug (NG0202) in the component; fixed with `inject()`.
 
+- Added Redis cache-aside (Spring Cache) for FX rates and receipt lookups with per-cache TTLs, JSON values, evict-on-update and hit/miss Micrometer metrics; a Testcontainers Redis test proves the second lookup skips the source and that an update forces a fresh read.
+- Published `ReceiptCreated` to a RabbitMQ topic exchange (Spring AMQP) with an idempotent consumer and a dead-letter queue; tested on a real broker in Testcontainers that malformed and contract-breaking messages go to the DLQ instead of blocking the queue.
+- Modelled a per-payer receipt history in Cassandra (partition key payer, clustering `created_at DESC`) with Spring Data Cassandra so "latest N" is a single-partition read; verified ordering, same-millisecond safety and upsert behaviour in Testcontainers.
+- Ported the payments Flyway schema to Oracle 23ai Free and ran the same JPA repository against it in Testcontainers (types, identity column, CLOB, row locks, `@Version`, CHECK constraints); documented the PostgreSQL-only `ON CONFLICT` idempotency path that was not ported.
+- Exposed receipt lookup as a contract-first SOAP service (XSD → JAXB → WSDL, Spring Web Services) with schema-validated `MockWebServiceClient` tests, and built a server-rendered Thymeleaf receipts dashboard with hand-written responsive CSS and escaping tests.
+- Built webhook retry (exponential backoff with full jitter, dead-letter after max attempts) test-first, with the failing-test and passing commits kept in history; added a Jakarta Bean Validation `@IsoCurrency` constraint enforced on the receipt API (400 before the service runs).
+
 ## Interview talking points (from the 10 fixes in RUN-RESULTS.md)
 
 - **Container runtime plumbing:** Testcontainers couldn't find Rancher Desktop's Docker socket, and docker-java's default API 1.32 was rejected by Docker 29 (min 1.41) — fixed with `DOCKER_HOST`/socket override and `api.version=1.44`.

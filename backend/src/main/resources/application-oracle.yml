@@ -1,0 +1,4 @@
+# Profile "oracle": same payments schema, Oracle dialect of the DDL (see db/oracle/V1__payments.sql and README).
+spring:
+  flyway:
+    locations: classpath:db/oracle

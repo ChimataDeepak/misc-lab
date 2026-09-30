@@ -64,6 +64,18 @@
     <dependency><groupId>com.google.cloud</groupId><artifactId>google-cloud-pubsub</artifactId></dependency>
     <dependency><groupId>com.google.cloud</groupId><artifactId>google-cloud-storage</artifactId></dependency>
 
+    <!-- Round 4 gap-fill: cache, SOAP, RabbitMQ, Cassandra, Oracle, Thymeleaf, Bean Validation -->
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-cache</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web-services</artifactId></dependency>
+    <dependency><groupId>wsdl4j</groupId><artifactId>wsdl4j</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-amqp</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-cassandra</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-thymeleaf</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-validation</artifactId></dependency>
+    <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-oracle</artifactId></dependency>
+    <dependency><groupId>com.oracle.database.jdbc</groupId><artifactId>ojdbc11</artifactId><scope>runtime</scope></dependency>
+
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.graphql</groupId><artifactId>spring-graphql-test</artifactId><scope>test</scope></dependency>
@@ -75,6 +87,10 @@
     <dependency><groupId>org.testcontainers</groupId><artifactId>postgresql</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>gcloud</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>elasticsearch</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.springframework.ws</groupId><artifactId>spring-ws-test</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>rabbitmq</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>cassandra</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>oracle-free</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.awaitility</groupId><artifactId>awaitility</artifactId><scope>test</scope></dependency>
   </dependencies>
   <build>
@@ -104,6 +120,17 @@
             </goals>
           </execution>
         </executions>
+      </plugin>
+      <!-- contract-first SOAP: JAXB classes generated from src/main/resources/xsd/receipts.xsd -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>jaxb2-maven-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions><execution><id>xjc</id><goals><goal>xjc</goal></goals></execution></executions>
+        <configuration>
+          <sources><source>${project.basedir}/src/main/resources/xsd/receipts.xsd</source></sources>
+          <packageName>com.deepak.misclab.soap.gen</packageName>
+        </configuration>
       </plugin>
       <!-- surefire runs *Test (unit, no Docker); failsafe runs *IT on `mvnw verify` -->
       <plugin>

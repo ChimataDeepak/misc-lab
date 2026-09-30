@@ -127,3 +127,35 @@ Kept the parallel writes anyway: the code is correct, tested, and never slower f
 15. **First `mvnw verify` failed for environment reasons**: `ElasticsearchReceiptClientIT` timed out waiting for ES to start (60 s), and `ReceiptFlowIT` hung for 15+ min in the test's HTTP client with no request in flight on the server (thread dump: all Tomcat threads idle). The compose stack (LocalStack + Lambda containers, Mongo, Azurite, Prometheus, WireMock) and the k8s stack were all running in the 5.8 GB VM. Fix: `docker compose down` before `mvnw verify` (tests start their own containers); the rerun passed completely (step 23).
 16. **Map order in the error**: `ReceiptWriteException.failedStores()` used `Map.copyOf`, which doesn't keep insertion order, so the test expecting `[dynamodb, mongo]` got `[mongo, dynamodb]`. Fix: unmodifiable `LinkedHashMap` copy.
 17. **Port clash avoided**: a local Postgres already listens on 5432, so compose publishes Postgres on 5433 and `application.yml` points there.
+
+---
+
+# 30 Sep 2026, round 4: Redis cache, SOAP, RabbitMQ, Cassandra, Oracle, Thymeleaf, TDD, Bean Validation
+
+Same machine (Rancher Desktop, macOS arm64, Corretto 21). Compose stack **down** during `verify` (fix 15). The unrelated k8s stack was still running.
+
+| # | Step | Command | Result |
+|---|---|---|---|
+| 29 | TDD red | `./mvnw test -Dtest=WebhookRetryTest` at commit `24500e5` (stubs) | FAIL as intended: 10 run, 1 failure, 9 errors |
+| 30 | TDD green | same, at commit `22f41b3` | PASS 10/10 |
+| 31 | Backend, full | `cd backend && ./mvnw verify` (22:58 to 23:02 IST) | PASS: **69 unit** (surefire, was 50) + **17 IT** (failsafe, was 4), 0 failures, 3 min 23 s |
+| 32 | Redis cache | `ReceiptCacheIT` (3), `redis:7.4-alpine` | PASS: 2nd receipt lookup served from Redis (source called once), `cache.gets` hit=1 / miss=1, TTL 1 h on the key, JSON value; update evicts and next read is fresh; unknown id not cached; FX rate cached per upper-cased currency, TTL 10 min, evict forces reload |
+| 33 | SOAP | `ReceiptSoapEndpointTest` (2), `MockWebServiceClient` | PASS: response valid against `receipts.xsd`, fields via XPath; unknown id = Client fault |
+| 34 | RabbitMQ | `RabbitReceiptIT` (3), `rabbitmq:3.13-management-alpine` | PASS: published event consumed, duplicate ignored (total counted once); bad JSON and negative amount both land on the DLQ with `x-death` reason `rejected`, not counted |
+| 35 | Cassandra | `CassandraReceiptHistoryIT` (3), `cassandra:4.1` | PASS: latest 3 of 5 for a payer returned newest first, no other payer's rows; same-millisecond receipts both kept, re-write is an upsert; `system_schema` confirms `created_at` clustering `desc` |
+| 36 | Oracle | `OraclePaymentRepositoryIT` (4), `gvenzl/oracle-free:23-slim-faststart` (arm64), profile `oracle` | PASS: Flyway V1 applied, 4 tables; Hibernate `validate` OK; save, `findByIdForUpdate`, `@Version` 0→1, microsecond timestamp round-trip; CHECK `REFUND_LE_CAPTURE` rejects over-refund; identity column orders outbox rows; 10 KB CLOB body |
+| 37 | HTML/CSS | `ReceiptDashboardControllerTest` (3), `@WebMvcTest` | PASS: 3 rows newest first, USD total 306.54 and INR subtotal, `<script>` payer escaped, empty state, CSS served |
+| 38 | Bean Validation | `ReceiptRequestValidationTest` (4) | PASS: `@IsoCurrency` accepts INR, rejects XYZ and lower-case; blank payer / negative amount / null currency all reported; invalid POST → 400 and service never called; valid POST → 201 |
+
+## What broke this round (and the fix)
+
+18. **SOAP dateTime format**: expected `2026-09-30T10:15:30Z`, JAXB wrote `2026-09-30T10:15:30.000Z`. Both are valid `xs:dateTime`; the test now expects what the marshaller emits (the response is also schema-validated).
+19. **Redis refuses null values**: `@Cacheable` on a lookup of an unknown receipt threw `Cache 'receipts' does not allow 'null' values`. Fix: `unless = "#result == null"`, so misses are not cached (a receipt created later is still found).
+20. **Oracle container start timed out at 60 s** under the busy VM while Cassandra/Redis also started (it took 20 s when run alone). Fix: `withStartupTimeout(5 min)` on the Oracle container.
+21. **Cassandra would break every other test**: its auto-configuration connects at startup. Fix: the Cassandra auto-configurations are excluded in `application.yml` and the feature is behind `misclab.cassandra.enabled`; `CassandraReceiptHistoryIT` clears the exclude list. Redis/RabbitMQ are lazy, so they are only gated by `misclab.cache.enabled` / `misclab.rabbit.enabled` and their health indicators are off by default.
+
+## Not verified / limits (kept honest)
+- Oracle: only the schema and JPA repository were run. `IdempotencyStore` uses PostgreSQL `ON CONFLICT`, not ported (would need `MERGE`).
+- Webhook retry: policy + state machine tested; not yet wired into a scheduled relay over `webhook_outbox`.
+- Redis, RabbitMQ, Cassandra run only in Testcontainers; not added to `docker-compose.yml` or exercised by a live app run this round.
+- Jakarta EE: APIs used inside Spring Boot (JPA, Bean Validation, Servlet). No Jakarta EE application server.

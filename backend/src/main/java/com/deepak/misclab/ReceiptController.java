@@ -15,7 +15,7 @@ public class ReceiptController {
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
-    public Receipt create(@RequestBody Receipt.Request req) { return service.create(req); }
+    public Receipt create(@jakarta.validation.Valid @RequestBody Receipt.Request req) { return service.create(req); }
 
     @PostMapping("/batch")
     public List<Receipt> batch(@RequestBody List<Receipt.Request> reqs) { return service.convertBatch(reqs); }

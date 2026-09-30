@@ -140,6 +140,15 @@ public class ReceiptService {
         return item == null ? null : item.toReceipt();
     }
 
+    /** Correct the payer name on a stored receipt (DynamoDB is the source of truth). Returns null if unknown. */
+    public Receipt updatePayer(String id, String payer) {
+        ReceiptItem item = table.getItem(Key.builder().partitionValue(id).build());
+        if (item == null) return null;
+        item.setPayer(payer);
+        table.putItem(item);
+        return item.toReceipt();
+    }
+
     /** Small scan for read-only consumers (python-svc receipt-insights). Fine for a lab table; a big table would need a GSI/pagination. */
     public List<Receipt> list(int limit) {
         return table.scan(b -> b.limit(Math.min(limit, 500))).items().stream().limit(limit).map(ReceiptItem::toReceipt).toList();
