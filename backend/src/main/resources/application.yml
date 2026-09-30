@@ -3,6 +3,9 @@ server:
 spring:
   application:
     name: misc-lab
+  graphql:
+    graphiql:
+      enabled: true
   data:
     mongodb:
       uri: mongodb://localhost:27017/misclab
@@ -24,6 +27,13 @@ misclab:
     enabled: false          # true + Azurite (or a real connection string) to archive receipts to Azure Blob
     connection-string: UseDevelopmentStorage=true  # Azurite/dev; override with a real Azure connection string when enabled
     container: receipts
+  oidc:
+    hmac-secret: "misclab-oidc-hmac-secret-key-32b!"
+  es:
+    base-url: http://localhost:9200
+  llm:
+    base-url: http://localhost:4010
+    api-key: test-not-a-real-key
   poller:
     enabled: true
 fx:
