@@ -20,6 +20,10 @@ misclab:
     queue: receipt-events
     table: receipts
     init-resources: true    # create bucket/queue/table on startup (LocalStack convenience)
+  azure:
+    enabled: false          # true + Azurite (or a real connection string) to archive receipts to Azure Blob
+    connection-string: UseDevelopmentStorage=true  # Azurite/dev; override with a real Azure connection string when enabled
+    container: receipts
   poller:
     enabled: true
 fx:

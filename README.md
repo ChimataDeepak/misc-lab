@@ -21,6 +21,7 @@ Branch `miscellaneous` of banking-backend is an **orphan branch**: no shared his
 | GraphQL | `backend/…/ReceiptGraphqlController.java`, `graphql/schema.graphqls` | `receipt(id)` query over the same service as REST |
 | gRPC / protobuf | `backend/src/main/proto/receipts.proto`, `ReceiptGrpcService` | `GetReceipt` RPC; unit tests, no extra port in `mvnw test` |
 | Angular (tiny) | `frontend-angular/` | Standalone component + `ReceiptApi` GET lookup; Vitest on the API |
+| Azure Blob (Azurite) | `AzureBlobReceiptArchive.java` | Receipt JSON to Azure Blob via official SDK; emulator, not a real subscription |
 
 Proof it runs: **[RUN-RESULTS.md](RUN-RESULTS.md)** — every step, its command, pass/fail and numbers, plus the 10 real problems hit and fixed.
 

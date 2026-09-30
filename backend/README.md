@@ -33,5 +33,10 @@ Run unit tests: `./mvnw test` (no Docker). Integration tests: `./mvnw verify` (T
 - **Why:** you can't operate what you can't see; JSON logs are machine-searchable.
 - **Interview:** "Counters for business events, timers for dependency latency, both scraped by Prometheus. Structured ECS logs mean Kibana/Datadog can filter by field instead of regexing text."
 
+## 7. Azure Blob Storage (SDK + Azurite)
+- **Built:** `AzureBlobReceiptArchive` uploads receipt JSON with the Azure Storage Blob SDK. Local emulator is Azurite (`docker compose` service `azurite`, Blob port 10000). `misclab.azure.enabled=true` wires a Spring bean; default is off so LocalStack ITs do not need Azure. `AzureBlobReceiptArchiveIT` is the Docker proof; `AzureBlobReceiptArchiveTest` mocks the container client.
+- **Why:** Target JDs (Adobe, Citi, Cohere) list Azure among cloud skills; this is Blob only, not AKS/App Service.
+- **Interview:** "Same pattern as S3: object key `receipts/{id}.json`, overwrite allowed. UseDevelopmentStorage or a real connection string. On Rancher Desktop, `TESTCONTAINERS_RYUK_DISABLED=true` is needed for the Azurite IT."
+
 ## Integration test
 `ReceiptFlowIT` starts LocalStack (S3, SQS, DynamoDB) and MongoDB via Testcontainers, stubs FX with WireMock, and checks the whole POST flow end to end, including the poller consuming the event and the Prometheus output.
