@@ -162,3 +162,16 @@ Same machine (Rancher Desktop, macOS arm64, Corretto 21). Compose stack **down**
 
 ### Fix 22 (verifier re-run): Cassandra schema DDL timeout
 Re-running all round-4 tests together, `CassandraReceiptHistoryIT.createSchema` failed with `DriverTimeout Query timed out after PT2S`: CREATE KEYSPACE/TABLE on a freshly started Cassandra under load from other containers exceeded the driver's default 2 s request timeout. The schema session now uses a 30 s request timeout; the IT passes 3/3 on re-run. All other round-4 tests (SOAP 2, dashboard 3, webhook retry 10, validation 4, Redis 3, RabbitMQ 3, Oracle 4) passed on the verifier's re-run.
+
+## Performance tuning: statement read path (1 Oct 2026)
+`perf/statement-bench.sh` (Testcontainers Postgres 16, 400k receipts / 1.2M lines, 32 clients, 30 s measured). Full write-up: PERF-REPORT.md.
+
+| Step | req/s | p50 ms | p95 ms | p99 ms | SQL/req |
+|---|---|---|---|---|---|
+| S0 baseline (N+1, no indexes) | 1.7 | 17,801 | 22,636 | 23,357 | 21.6 |
+| S1 + indexes | 318.8 | 96.4 | 144.0 | 176.1 | 21.0 |
+| S2 + fetch join (N+1 gone) | 1,494.9 | 19.8 | 35.3 | 48.5 | 2.0 |
+| S4 + 5 s Caffeine cache (98% hit) | 18,093.5 | 1.5 | 3.6 | 6.2 | 0.0 |
+
+No gain (reported, not hidden): Hikari pool above 10, GC flags (ParallelGC, ZGC, -Xmx128m), index id tie-break.
+JMH: keyed cache eviction 0.56 us vs scan 377 us (10k entries). `StatementServiceIT`: 3/3 PASS.

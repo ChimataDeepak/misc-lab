@@ -76,7 +76,13 @@
     <dependency><groupId>org.flywaydb</groupId><artifactId>flyway-database-oracle</artifactId></dependency>
     <dependency><groupId>com.oracle.database.jdbc</groupId><artifactId>ojdbc11</artifactId><scope>runtime</scope></dependency>
 
+    <!-- Performance tuning: in-process cache for hot statement reads -->
+    <dependency><groupId>com.github.ben-manes.caffeine</groupId><artifactId>caffeine</artifactId></dependency>
+
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+    <!-- JMH microbenchmarks (src/test/java/.../statement/perf/*Benchmark.java); run with perf/jmh.sh, never in mvnw verify -->
+    <dependency><groupId>org.openjdk.jmh</groupId><artifactId>jmh-core</artifactId><version>1.37</version><scope>test</scope></dependency>
+    <dependency><groupId>org.openjdk.jmh</groupId><artifactId>jmh-generator-annprocess</artifactId><version>1.37</version><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.security</groupId><artifactId>spring-security-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.springframework.graphql</groupId><artifactId>spring-graphql-test</artifactId><scope>test</scope></dependency>
     <dependency><groupId>org.wiremock</groupId><artifactId>wiremock-standalone</artifactId><version>3.9.2</version><scope>test</scope></dependency>

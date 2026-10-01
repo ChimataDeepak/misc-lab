@@ -1,0 +1,7 @@
+Benchmark                                   (entries)  Mode  Cnt    Score     Error  Units
+StatementCacheEvictionBenchmark.keyedEvict       1000  avgt    5    0.314 ±   0.260  us/op
+StatementCacheEvictionBenchmark.keyedEvict      10000  avgt    5    0.558 ±   0.186  us/op
+StatementCacheEvictionBenchmark.scanEvict        1000  avgt    5   35.296 ±  14.083  us/op
+StatementCacheEvictionBenchmark.scanEvict       10000  avgt    5  377.420 ± 114.261  us/op
+StatementJsonBenchmark.newMapperPerCall           N/A  avgt    5  146.650 ±  65.070  us/op
+StatementJsonBenchmark.sharedWriter               N/A  avgt    5   19.367 ±  16.372  us/op

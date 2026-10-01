@@ -88,3 +88,7 @@ Proof it runs: **[RUN-RESULTS.md](RUN-RESULTS.md)** — every step, its command,
 
 ## AI-assisted development (honest note)
 Built with Claude Code agents: three builder agents worked in parallel on disjoint folders (backend+lambda, infra+perf+observability+CI, frontend+e2e) against a shared contract (names, ports, metrics). The combined dry run and all the fixes in RUN-RESULTS.md were done step by step with the results checked by hand. Before claiming any skill in an interview, read that folder's README — each ends with "how to explain this in an interview".
+
+## Performance tuning (statement read path)
+Measured before/after with a load test, EXPLAIN ANALYZE, JFR and JMH: 1.7 -> 1,495 req/s and p99 23.4 s -> 48.5 ms
+(indexes + N+1 fix), 18k req/s with a 5 s cache. See PERF-REPORT.md and learn/LEARN-Performance-Tuning.md.
