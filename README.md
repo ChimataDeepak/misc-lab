@@ -40,6 +40,37 @@ Branch `miscellaneous` of banking-backend is an **orphan branch**: no shared his
 | **TDD** | `payments/retry/` | Webhook retry: exponential backoff + full jitter, max-attempts → DEAD_LETTER; red commit `24500e5`, green commit `22f41b3` |
 | **Jakarta EE APIs via Spring Boot** | `validation/IsoCurrency*.java`, `Receipt.Request` | Jakarta Bean Validation custom constraint + standard ones, enforced by `@Valid` (400 before the service runs). Not a full Jakarta EE app server |
 
+## How to read this code
+
+Start with the backend; the other folders (`lambda/`, `infra/`, `frontend/`, `python-svc/`, `go-verify/` …) each have their own README. Java paths below are relative to `backend/src/main/java/com/deepak/misclab/`.
+
+Reading order:
+
+1. `MiscLabApplication.java` — Spring Boot entry point; turns on `@ConfigurationProperties` scanning and `@Scheduled` jobs.
+2. `ReceiptController.java` — REST API for `/api/receipts` (create, batch, list, get); maps a failed storage write to HTTP 503.
+3. `ReceiptService.java` — the receipt use case: FX conversion, parallel DynamoDB + S3 + Mongo writes, then the `ReceiptCreated` event on SQS and the optional extra sinks.
+4. `FxClient.java` — third-party FX call with Spring `RestClient`, timeouts and Resilience4j retry + circuit breaker + fallback rate.
+5. `ReceiptEventPoller.java` — the SQS consumer: long-poll, handle, delete (delete = ack).
+6. `payments/PaymentController.java` — REST API for `/api/payments` (create, authorize, capture, refund, void, webhook receive) and the error-to-status mapping.
+7. `payments/PaymentService.java` — one transaction per call: idempotency-key claim + row lock + state change + outbox event.
+8. `payments/PaymentIntent.java` — immutable payment state machine (CREATED → AUTHORIZED → CAPTURED → REFUNDED, VOIDED) in integer minor units.
+9. `payments/IdempotencyStore.java` — `Idempotency-Key` handling on PostgreSQL (`INSERT … ON CONFLICT DO NOTHING`, stored response, 422 on reuse).
+10. `payments/WebhookPublisher.java` — signed webhook events written to `webhook_outbox` in the same transaction, delivered after commit.
+
+Which file to open for each flow:
+
+| Flow | Open, in order |
+|---|---|
+| `POST /api/receipts` | `ReceiptController` → `ReceiptService.create` → `FxClient.rateToUsd` → parallel writes on `ExecutorConfig.receiptIoExecutor` → SQS → `ReceiptEventPoller`; extra sinks: `messaging/RabbitReceiptPublisher`, `gcp/GcpReceiptSink` |
+| `POST /api/receipts/batch` (virtual threads) | `ReceiptController.batch` → `ReceiptService.convertBatch` → `ExecutorConfig.java` |
+| Read one receipt over REST / GraphQL / gRPC / SOAP | `ReceiptController.get`, `ReceiptGraphqlController`, `ReceiptGrpcService`, `soap/ReceiptSoapEndpoint` → all call `ReceiptService.get`; the optional Redis cache-aside wrapper around it is `cache/CachedLookups.java` |
+| `POST /api/payments` and `/{id}/capture`, `/{id}/refund` | `payments/PaymentController` → `payments/PaymentService` → `payments/IdempotencyStore` → `payments/PaymentRepository.findByIdForUpdate` → `payments/PaymentIntent` → `payments/WebhookPublisher`; schema in `backend/src/main/resources/db/migration/V1__payments.sql` |
+| `POST /api/payments/webhooks/receive` | `payments/PaymentController.receive` → `payments/WebhookVerifier` → `payments/SeenEventStore` |
+| Webhook retry policy (TDD) | `payments/retry/WebhookRetryPolicy.java` → `payments/retry/WebhookRetrier.java` |
+| RabbitMQ event + dead-letter queue | `messaging/RabbitReceiptConfig` → `messaging/RabbitReceiptPublisher` → `messaging/LedgerReceiptConsumer` |
+| `GET /api/statements/{payerId}` (performance-tuned read) | `statement/StatementController` → `statement/StatementService` → `statement/LedgerReceiptRepository` |
+| `/dashboard` (server-rendered HTML) | `web/ReceiptDashboardController` → `backend/src/main/resources/templates/dashboard.html` |
+
 ## Payments on PostgreSQL (how it's safe under concurrency)
 
 Schema is owned by Flyway (`backend/src/main/resources/db/migration/V1__payments.sql`); Hibernate only validates it (`ddl-auto: validate`). `docker compose up -d` starts `postgres:16` on host port **5433** (5432 is often a local Postgres). Tests get a throwaway Postgres 16 from Testcontainers via the `jdbc:tc:` URL in `backend/src/test/resources/application.properties`.
