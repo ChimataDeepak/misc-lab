@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.elasticsearch.ElasticsearchContainer;
@@ -28,7 +29,8 @@ class ElasticsearchReceiptClientIT {
     @Test
     void indexThenSearchAgainstRealElasticsearch() {
         var client = new ElasticsearchReceiptClient(
-                HostPortReady.awaitHttp("http://" + es.getHttpHostAddress(), "/"), new ObjectMapper().findAndRegisterModules());
+                HostPortReady.awaitHttp("http://" + es.getHttpHostAddress(), "/"), new ObjectMapper().findAndRegisterModules(),
+                Duration.ofSeconds(30));
         Instant t = Instant.parse("2026-09-30T00:00:00Z");
         client.index(new Receipt("r1", "Deepak", new BigDecimal("10"), "USD", new BigDecimal("10.00"), t));
         client.index(new Receipt("r2", "priya", new BigDecimal("5"), "USD", new BigDecimal("5.00"), t));

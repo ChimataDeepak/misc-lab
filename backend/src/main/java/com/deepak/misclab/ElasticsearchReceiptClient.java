@@ -21,8 +21,15 @@ public class ElasticsearchReceiptClient {
     private final HttpClient http;
     private final String baseUrl;
     private final ObjectMapper json;
+    private final Duration requestTimeout;
 
     public ElasticsearchReceiptClient(String baseUrl, ObjectMapper json) {
+        this(baseUrl, json, Duration.ofSeconds(3));
+    }
+
+    /** The first index call auto-creates the index and waits for a refresh: allow longer on a cold cluster. */
+    public ElasticsearchReceiptClient(String baseUrl, ObjectMapper json, Duration requestTimeout) {
+        this.requestTimeout = requestTimeout;
         this.http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).build();
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
         this.json = json;
@@ -34,7 +41,7 @@ public class ElasticsearchReceiptClient {
             var req = HttpRequest.newBuilder(URI.create(baseUrl + "/receipts/_doc/" + receipt.receiptId() + "?refresh=wait_for"))
                     .header("Content-Type", "application/json")
                     .PUT(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                    .timeout(Duration.ofSeconds(3))
+                    .timeout(requestTimeout)
                     .build();
             var res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() >= 300) {
@@ -57,7 +64,7 @@ public class ElasticsearchReceiptClient {
             var req = HttpRequest.newBuilder(URI.create(baseUrl + "/receipts/_search"))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(q, StandardCharsets.UTF_8))
-                    .timeout(Duration.ofSeconds(3))
+                    .timeout(requestTimeout)
                     .build();
             var res = http.send(req, HttpResponse.BodyHandlers.ofString());
             if (res.statusCode() >= 300) {
